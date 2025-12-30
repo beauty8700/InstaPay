@@ -1,9 +1,10 @@
-import Balance from "../components/Balance";
+import BalanceCards from "../components/BalanceCards";
 import User from "../components/User"
+
 function Send(){
     return(
 <div>
-    <Balance/>
+    <BalanceCards/>
     <User/>
 </div>
 )

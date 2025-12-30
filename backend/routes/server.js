@@ -1,122 +1,112 @@
 import express from "express";
-import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import {User,Account} from "../models/user.js";
+import { User, Account } from "../models/user.js";
 import { auth, Sec } from "../middleware/auth.js";
 import { z } from "zod";
 
 const router = express.Router();
 
-const UserSc = z.object({
-  First_name: z.string().min(4),
+const SignUpSchema = z.object({
+  First_name: z.string().min(3),
   Last_name: z.string().min(3),
-  password: z.string().min(8).max(20),
-  Username: z.string().email(), 
+  Username: z.string().email(),
+  password: z.string().min(8)
 });
 
+
+const LoginSchema = z.object({
+  Username: z.string().email(),
+  password: z.string().min(8)
+});
+
+
 router.post("/signUp", async (req, res) => {
-  try {
-    const body = req.body;
-    const validation = UserSc.safeParse(body);
+  const validation = SignUpSchema.safeParse(req.body);
 
-    if (!validation.success) {
-      return res.status(400).json({ message: "Invalid data", errors: validation.error.errors });
-    }
-
-    const existingUser = await User.findOne({ Username: body.Username });
-    if (existingUser) {
-      return res.status(400).json({ message: "User already exists" });
-    }
-
-    // Hash the password before saving
-    const hashedPassword = await bcrypt.hash(body.password, 10);
-    body.password = hashedPassword;
-
-    const dbUser = await User.create(body);
-    const userid=dbUser.id;
-    await Account.create({userId:userid,Balance:0});// create new account for user 
-
-
-    const token = jwt.sign({ id: dbUser._id }, Sec, { expiresIn: "1h" });
-
-    res.json({ message: "User created successfully", token });
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+  if (!validation.success) {
+    return res.status(400).json({
+      message: "Invalid signup data",
+      errors: validation.error.errors
+    });
   }
+
+  const { First_name, Last_name, Username, password } = req.body;
+
+  const existingUser = await User.findOne({ Username });
+  if (existingUser) {
+    return res.status(400).json({ message: "User already exists" });
+  }
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  const user = await User.create({
+    First_name,
+    Last_name,
+    Username,
+    password: hashedPassword
+  });
+
+  await Account.create({
+    userId: user._id,
+    Balance: 0
+  });
+
+  const token = jwt.sign({ id: user._id }, Sec, { expiresIn: "1h" });
+
+  res.json({ message: "Signup successful", token });
 });
 
 router.post("/login", async (req, res) => {
-  try {
-    const body = req.body;
-    const validation = UserSc.safeParse(body);
+  console.log("LOGIN HIT");
+  console.log(req.body);
+  const validation = LoginSchema.safeParse(req.body);
 
-    if (!validation.success) {
-      return res.status(400).json({ message: "Invalid data", errors: validation.error.errors });
-    }
-
-    const user = await User.findOne({ Username: body.Username });
-    if (!user || !(await bcrypt.compare(body.password, user.password))) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    const token = jwt.sign({ id: user._id }, Sec, { expiresIn: "1h" });
-
-    res.json({ message: "User logged in successfully", token });
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
-});
-
-const UserUp = z.object({
-  First_name: z.string().min(4),
-  Last_name: z.string().min(3),
-  password: z.string().min(8).max(20),
-});
-
-router.post("/update", auth, async (req, res) => {
-  try {
-    const body = req.body;
-    const validation = UserUp.safeParse(body);
-
-    if (!validation.success) {
-      return res.status(400).json({ message: "Invalid data", errors: validation.error.errors });
-    }
-
-    // Hash new password
-    if (body.password) {
-      body.password = await bcrypt.hash(body.password, 10);
-    }
-
-    await User.updateOne({ _id: req.user }, { $set: body });
-
-    res.json({ message: "User updated successfully" });
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
-});
-
-router.get("/bulk", auth, async (req, res) => {
-  try {
-    const filter = req.query.filter || "";
-    const users = await User.find({
-      $or: [
-        { First_name: { $regex: filter, $options: "i" } },
-        { Last_name: { $regex: filter, $options: "i" } },
-      ],
+  if (!validation.success) {
+    return res.status(400).json({
+      message: "Invalid login data",
+      errors: validation.error.errors
     });
-
-    res.json({
-      users: users.map(user => ({
-        username: user.Username,
-        firstName: user.First_name,
-        lastName: user.Last_name,
-        _id: user._id,
-      })),
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
   }
+
+  const { Username, password } = req.body;
+
+  const user = await User.findOne({ Username });
+  if (!user) {
+    return res.status(401).json({ message: "Invalid credentials" });
+  }
+
+  const isMatch = await bcrypt.compare(password, user.password);
+  if (!isMatch) {
+    return res.status(401).json({ message: "Invalid credentials" });
+  }
+
+  const token = jwt.sign({ id: user._id }, Sec, { expiresIn: "1h" });
+
+  res.json({ message: "Login successful", token });
+});
+
+router.post("/reset-password", async (req, res) => {
+  const { email, newPassword } = req.body;
+
+  if (!email || !newPassword) {
+    return res.status(400).json({ message: "Email and new password are required" });
+  }
+
+  if (newPassword.length < 8) {
+    return res.status(400).json({ message: "Password must be at least 8 characters long" });
+  }
+
+  const user = await User.findOne({ Username: email });
+  if (!user) {
+    return res.status(404).json({ message: "User not found" });
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+  await User.findByIdAndUpdate(user._id, { password: hashedPassword });
+
+  res.json({ message: "Password reset successful" });
 });
 
 export { router };
