@@ -63,14 +63,7 @@ function History() {
 
   return (
     <div className="min-h-screen" style={{backgroundColor: '#1A1F2E'}}>
-      <div className="max-w-md mx-auto mb-4">
-        <button
-          onClick={() => navigate("/Dashboard")}
-          className="flex items-center gap-2 text-pink-600 font-semibold"
-        >
-          ← Back
-        </button>
-      </div>
+      
       <Appbar />
 
       <div className="container mx-auto px-4 py-8 pt-24">
